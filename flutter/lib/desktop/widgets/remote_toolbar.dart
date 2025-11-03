@@ -511,7 +511,7 @@ class _MonitorMenu extends StatelessWidget {
         menuStyle: MenuStyle(
             padding:
                 MaterialStatePropertyAll(EdgeInsets.symmetric(horizontal: 6))),
-        menuChildrenGetter: () => [buildMonitorSubmenuWidget(context)]);
+        menuChildrenGetter: (state) => [buildMonitorSubmenuWidget(context)]);
   }
 
   Widget buildMultiMonitorMenu(BuildContext context) {
@@ -722,7 +722,7 @@ class _ControlMenu extends StatelessWidget {
         color: _ToolbarTheme.blueColor,
         hoverColor: _ToolbarTheme.hoverBlueColor,
         ffi: ffi,
-        menuChildrenGetter: () => toolbarControls(context, id, ffi).map((e) {
+        menuChildrenGetter: (state) => toolbarControls(context, id, ffi).map((e) {
               if (e.divider) {
                 return Divider();
               } else {
@@ -933,12 +933,13 @@ class _DisplayMenuState extends State<_DisplayMenu> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     _screenAdjustor.updateScreen();
-    menuChildrenGetter() {
+    menuChildrenGetter(_IconSubmenuButtonState state) {
       final menuChildren = <Widget>[
         _screenAdjustor.adjustWindow(context),
         viewStyle(customPercent: _customPercent),
-        scrollStyle(),
+        scrollStyle(state, colorScheme),
         imageQuality(),
         codec(),
         if (ffi.connType == ConnType.defaultConn)
@@ -1059,7 +1060,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
     });
   }
 
-  scrollStyle() {
+  scrollStyle(_IconSubmenuButtonState state, ColorScheme colorScheme) {
     return futureBuilder(future: () async {
       final viewStyle =
           await bind.sessionGetViewStyle(sessionId: ffi.sessionId) ?? '';
@@ -1067,16 +1068,39 @@ class _DisplayMenuState extends State<_DisplayMenu> {
           viewStyle == kRemoteViewStyleCustom;
       final scrollStyle =
           await bind.sessionGetScrollStyle(sessionId: ffi.sessionId) ?? '';
-      return {'visible': visible, 'scrollStyle': scrollStyle};
+      final edgeScrollEdgeThickness =
+          await bind.sessionGetEdgeScrollEdgeThickness(sessionId: ffi.sessionId) ?? kDefaultEdgeScrollEdgeThickness;
+      return {
+        'visible': visible,
+        'scrollStyle': scrollStyle,
+        'edgeScrollEdgeThickness': edgeScrollEdgeThickness
+      };
     }(), hasData: (data) {
       final visible = data['visible'] as bool;
       if (!visible) return Offstage();
       final groupValue = data['scrollStyle'] as String;
-      onChange(String? value) async {
-        if (value == null) return;
+      final edgeScrollEdgeThickness = data['edgeScrollEdgeThickness'] as int;
+      updateScrollStyle(String value) async {
         await bind.sessionSetScrollStyle(
             sessionId: ffi.sessionId, value: value);
         widget.ffi.canvasModel.updateScrollStyle();
+      }
+      onChangeScrollStyle(String? value) async {
+        if (value == null) return;
+        await updateScrollStyle(value);
+        state.setState(() { });
+      }
+      onChangeEdgeScrollEdgeThickness(double? value) async {
+        if (value == null) return;
+        if (groupValue != kRemoteScrollStyleEdge) {
+          updateScrollStyle(kRemoteScrollStyleEdge);
+        }
+        final newThickness = value.round();
+        await bind.sessionSetEdgeScrollEdgeThickness(
+          sessionId: ffi.sessionId,
+          value: newThickness);
+        widget.ffi.canvasModel.updateEdgeScrollEdgeThickness(newThickness);
+        state.setState(() { });
       }
 
       return Obx(() => Column(children: [
@@ -1085,7 +1109,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               value: kRemoteScrollStyleAuto,
               groupValue: groupValue,
               onChanged: widget.ffi.canvasModel.imageOverflow.value
-                  ? (value) => onChange(value)
+                  ? (value) => onChangeScrollStyle(value)
                   : null,
               ffi: widget.ffi,
             ),
@@ -1093,17 +1117,49 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               child: Text(translate('ScrollEdge')),
               value: kRemoteScrollStyleEdge,
               groupValue: groupValue,
+              closeOnActivate: false,
               onChanged: widget.ffi.canvasModel.imageOverflow.value
-                  ? (value) => onChange(value)
+                  ? (value) => onChangeScrollStyle(value)
                   : null,
               ffi: widget.ffi,
+            ),
+            Semantics(
+              label: translate('ScrollEdgeThicknessSlider'),
+              value: edgeScrollEdgeThickness.toString(),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: colorScheme.primary,
+                  thumbColor: colorScheme.primary,
+                  overlayColor: colorScheme.primary.withOpacity(0.1),
+                  showValueIndicator: ShowValueIndicator.never,
+                  thumbShape: _RectValueThumbShape(
+                    min: kMinimumEdgeScrollEdgeThickness.toDouble(),
+                    max: kMaximumEdgeScrollEdgeThickness.toDouble(),
+                    width: 52,
+                    height: 24,
+                    radius: 4,
+                    unit: 'px',
+                  ),
+                ),
+                child: Slider(
+                  label: translate('Scroll region thickness'),
+                  value: edgeScrollEdgeThickness.toDouble(),
+                  min: kMinimumEdgeScrollEdgeThickness.toDouble(),
+                  max: kMaximumEdgeScrollEdgeThickness.toDouble(),
+                  divisions: (kMaximumEdgeScrollEdgeThickness - kMinimumEdgeScrollEdgeThickness).round(),
+                  semanticFormatterCallback: (double newValue) {
+                    return "${newValue.round()}px";
+                  },
+                  onChanged: onChangeEdgeScrollEdgeThickness,
+                ),
+              ),
             ),
             RdoMenuButton<String>(
               child: Text(translate('Scrollbar')),
               value: kRemoteScrollStyleBar,
               groupValue: groupValue,
               onChanged: widget.ffi.canvasModel.imageOverflow.value
-                  ? (value) => onChange(value)
+                  ? (value) => onChangeScrollStyle(value)
                   : null,
               ffi: widget.ffi,
             ),
@@ -1281,6 +1337,7 @@ class _RectValueThumbShape extends SliderComponentShape {
   final double width;
   final double height;
   final double radius;
+  final String unit;
   // Optional mapper to compute display value from normalized position [0,1]
   // If null, falls back to linear interpolation between min and max.
   final int Function(double normalized)? displayValueForNormalized;
@@ -1292,6 +1349,7 @@ class _RectValueThumbShape extends SliderComponentShape {
     required this.height,
     required this.radius,
     this.displayValueForNormalized,
+    this.unit = '%',
   });
 
   @override
@@ -1332,12 +1390,12 @@ class _RectValueThumbShape extends SliderComponentShape {
     final Paint paint = Paint()..color = fillColor;
     canvas.drawRRect(rrect, paint);
 
-    // Compute displayed percent from normalized slider value.
-    final int percent = displayValueForNormalized != null
+    // Compute displayed value from normalized slider value.
+    final int displayValue = displayValueForNormalized != null
         ? displayValueForNormalized!(value)
         : (min + value * (max - min)).round();
     final TextSpan span = TextSpan(
-      text: '$percent%',
+      text: '$displayValue$unit',
       style: const TextStyle(
         color: Colors.white,
         fontSize: 12,
@@ -1696,7 +1754,7 @@ class _KeyboardMenu extends StatelessWidget {
         ffi: ffi,
         color: _ToolbarTheme.blueColor,
         hoverColor: _ToolbarTheme.hoverBlueColor,
-        menuChildrenGetter: () => [
+        menuChildrenGetter: (state) => [
               keyboardMode(),
               localKeyboardType(),
               inputSource(),
@@ -1961,7 +2019,7 @@ class _ChatMenuState extends State<_ChatMenu> {
           ffi: widget.ffi,
           color: _ToolbarTheme.blueColor,
           hoverColor: _ToolbarTheme.hoverBlueColor,
-          menuChildrenGetter: () => [textChat(), voiceCall()]);
+          menuChildrenGetter: (state) => [textChat(), voiceCall()]);
     }
   }
 
@@ -2017,7 +2075,7 @@ class _VoiceCallMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    menuChildrenGetter() {
+    menuChildrenGetter(_IconSubmenuButtonState state) {
       final audioInput = AudioInput(
         builder: (devices, currentDevice, setDevice) {
           return Column(
@@ -2217,7 +2275,7 @@ class _IconSubmenuButton extends StatefulWidget {
   final Widget? icon;
   final Color color;
   final Color hoverColor;
-  final List<Widget> Function() menuChildrenGetter;
+  final List<Widget> Function(_IconSubmenuButtonState state) menuChildrenGetter;
   final MenuStyle? menuStyle;
   final FFI? ffi;
   final double? width;
@@ -2241,6 +2299,11 @@ class _IconSubmenuButton extends StatefulWidget {
 
 class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
   bool hover = false;
+
+  @override // discard @protected
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2274,7 +2337,7 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
                         ),
                         child: icon))),
             menuChildren: widget
-                .menuChildrenGetter()
+                .menuChildrenGetter(this)
                 .map((e) => _buildPointerTrackWidget(e, widget.ffi))
                 .toList()));
     return MenuBar(children: [

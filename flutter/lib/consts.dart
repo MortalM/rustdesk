@@ -79,6 +79,7 @@ const String kWindowEventOpenMonitorSession = "open_monitor_session";
 
 const String kOptionViewStyle = "view_style";
 const String kOptionScrollStyle = "scroll_style";
+const String kOptionEdgeScrollEdgeThickness = "edge_scroll_edge_thickness";
 const String kOptionImageQuality = "image_quality";
 const String kOptionOpenNewConnInTabs = "enable-open-new-connections-in-tabs";
 const String kOptionTextureRender = "use-texture-render";
@@ -329,6 +330,15 @@ const kRemoteScrollStyleBar = 'scrollbar';
 
 /// [kRemoteScrollStyleEdge] Scroll image auto at edges.
 const kRemoteScrollStyleEdge = 'scrolledge';
+
+/// [kMinimumEdgeScrollEdgeThickness] Minimum value for the edge scroll edge thickness in settings UI.
+const kMinimumEdgeScrollEdgeThickness = 10;
+
+/// [kMaximumEdgeScrollEdgeThickness] Maximum value for the edge scroll edge thickness in settings UI.
+const kMaximumEdgeScrollEdgeThickness = 150;
+
+/// [kDefaultEdgeScrollEdgeThickness] Default value for the edge scroll edge thickness.
+const kDefaultEdgeScrollEdgeThickness = 100;
 
 /// [kScrollModeDefault] Mouse or touchpad, the default scroll mode.
 const kScrollModeDefault = 'default';
